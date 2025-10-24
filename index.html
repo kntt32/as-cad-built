@@ -208,6 +208,12 @@ translate(20, 0, 0) {
 }</code></pre>
         <h3>Const</h3>
         <pre><code>const MY_CONST = 123;</code></pre>
+        <h3>Loop</h3>
+        <pre><code>for(i, 0, 10, 1) {
+  translate(i, i, 0) {
+    cube(i);
+  }
+}</code></pre>
         <h3>Comment</h3>
         <pre><code>// This is Comment
 /*
@@ -41723,6 +41729,31 @@ var ShapeSyntax = class {
     return string;
   }
 };
+var ForSyntax = class {
+  offset;
+  constant;
+  start;
+  end;
+  delta;
+  syntaxes;
+  constructor(offset, constant, start, end, delta, syntaxes) {
+    this.offset = offset;
+    this.constant = constant;
+    this.start = start;
+    this.end = end;
+    this.delta = delta;
+    this.syntaxes = syntaxes;
+  }
+  format() {
+    let string = `for(${this.constant}, ${this.start}, ${this.end}, ${this.delta}) {
+`;
+    for (const syntax of this.syntaxes) {
+      string += syntax.syntax.format();
+    }
+    string += "}";
+    return string;
+  }
+};
 var CommentSyntax = class {
   msg;
   constructor(msg) {
@@ -41859,6 +41890,11 @@ var Parser = class {
           type: "const",
           syntax: this.parseConstSyntax()
         };
+      case "for":
+        return {
+          type: "for",
+          syntax: this.parseForSyntax()
+        };
       default:
         return {
           type: "shape",
@@ -41926,6 +41962,34 @@ var Parser = class {
       this.parseSymbol(";");
     }
     return new ShapeSyntax(offset, name, params, syntaxes);
+  }
+  parseForSyntax() {
+    const offset = this.offset;
+    const params = [];
+    this.parseSymbol("(");
+    for (let i = 0; i < 4; i++) {
+      params.push(this.parseKeyword());
+      if (this.startWithSymbol(")")) {
+        break;
+      }
+      this.parseSymbol(",");
+    }
+    this.parseSymbol(")");
+    const syntaxes = [];
+    if (this.startWithSymbol("{")) {
+      this.parseSymbol("{");
+      while (!this.startWithSymbol("}")) {
+        syntaxes.push(this.parseSyntax());
+      }
+      this.parseSymbol("}");
+    } else {
+      this.parseSymbol(";");
+    }
+    const constant = params[0];
+    const start = params[1];
+    const end = params[2];
+    const delta = params[3];
+    return new ForSyntax(offset, constant, start, end, delta, syntaxes);
   }
   parseCommentSyntax() {
     let comment = "";
@@ -42484,6 +42548,36 @@ var ShapeBuilder = class _ShapeBuilder {
       return this.buildModuleShape(moduleSyntax, params);
     }
   }
+  buildFor(forSyntax) {
+    const shapes = [];
+    const constants = new Map(this.constants);
+    const start = this.getValue(forSyntax.start);
+    const end = this.getValue(forSyntax.end);
+    const delta = this.getValue(forSyntax.delta);
+    if (start == void 0) {
+      throw new ParseError(forSyntax.offset, `constant ${forSyntax.start} is undefined`);
+    }
+    if (end == void 0) {
+      throw new ParseError(forSyntax.offset, `constant ${forSyntax.end} is undefined`);
+    }
+    if (delta == void 0) {
+      throw new ParseError(forSyntax.offset, `constant ${forSyntax.delta} is undefined`);
+    }
+    if (0 < delta) {
+      for (let i = start; i < end; i += delta) {
+        constants.set(forSyntax.constant, i);
+        const builder = this.inherit(forSyntax.syntaxes, constants);
+        shapes.push(...builder.build());
+      }
+    } else if (delta < 0) {
+      for (let i = start; end < i; i += delta) {
+        constants.set(forSyntax.constant, i);
+        const builder = this.inherit(forSyntax.syntaxes, constants);
+        shapes.push(...builder.build());
+      }
+    }
+    return shapes;
+  }
   assemble() {
     const shapes = this.build();
     return new Shape(Offset.root(), "assemble", [], shapes);
@@ -42500,6 +42594,9 @@ var ShapeBuilder = class _ShapeBuilder {
           break;
         case "shape":
           shapes.push(...this.buildShape(syntax.syntax));
+          break;
+        case "for":
+          shapes.push(...this.buildFor(syntax.syntax));
           break;
       }
     }
@@ -69603,6 +69700,12 @@ translate(20, 0, 0) {
 }</code></pre>
             <h3>Const</h3>
               <pre><code>const MY_CONST = 123;</code></pre>
+            <h3>Loop</h3>
+              <pre><code>for(i, 0, 10, 1) {
+  translate(i, i, 0) {
+    cube(i);
+  }
+}</code></pre>
             <h3>Comment</h3>
               <pre><code>// This is Comment
 /*
