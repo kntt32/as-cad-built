@@ -159,66 +159,6 @@ textarea {
   <body>
     <noscript>
       <div style="background: red; color: white;">PLEASE ENABLE JAVASCRIPT</div>
-      <h1>as-cad</h1>
-        as-cad is a web-based declarative CAD.
-        <h2>Example</h2>
-        <pre>
-<code>translate(-20, 0, 0) {
-  subtract {
-    cube(10, 10, 10, true);
-    sphere(6);
-  }
-}
-intersect {
-  cube(10, 10, 10, true);
-  sphere(6);
-}
-translate(20, 0, 0) {
-  extrude_helical(6.28, 6) {
-    translate(3, 2.5, 0) {
-      circle(2);
-    }
-  }
-}</code>
-        </pre>
-        <h2>Primitive</h2>
-        <ul>
-          <li><code>cube(<i>width</i>, <i>height (optional)</i>, <i>depth (optional)</i>, <i>center (optional)</i>);</code></li>
-          <li><code>sphere(<i>radius</i>, <i>segments (optional)</i>);</code></li>
-          <li><code>cylinder(<i>radius</i>, <i>height</i>, <i>segments (optional)</i>);</code></li>
-          <li><code>union {..<i>Solid</i>}</code></li>
-          <li><code>subtract {..<i>Solid</i>}</code></li>
-          <li><code>intersect {..<i>Solid</i>}</code></li>
-          <li><code>translate(<i>x</i>, <i>y</i>, <i>z</i>) {..<i>Solid/Sketch</i>}</code></li>
-          <li><code>rotate(<i>angle_x</i>, <i>angle_y</i>, <i>angle_z</i>) {..<i>Solid/Sketch</i>}</code></li>
-          <li><code>scale(<i>x</i>, <i>y (optional)</i>, <i>z (optional)</i>) {..<i>Solid/Sketch</i>}</code></li>
-          <li><code>assemble {..<i>Solid</i>}</code></li>
-          <li><code>extrude(<i>height</i>) {..<i>Sketch</i>}</code></li>
-          <li><code>extrude_helical(<i>angle</i>, <i>pitch</i>, <i>segments (optional)</i>) {..<i>Sketch</i>}</code></li>
-          <li><code>circle(<i>radius</i>, <i>segments (optional)</i>);</code></li>
-          <li><code>rect(<i>width</i>, <i>height (optional)</i>);</code></li>
-          <li><code>triangle(<i>len1 (optional)</i>, <i>len2 (optional)</i>, <i>len3 (optional)</i>);</code></li>
-        </ul>
-        <h2>Syntax</h2>
-        <h3>Shape</h3>
-        <pre><code>cube(10, 10, 10);</code></pre>
-        <h3>Module</h3>
-        <pre><code>as my_module(x) {
-  sphere(x);
-}</code></pre>
-        <h3>Const</h3>
-        <pre><code>const MY_CONST = 123;</code></pre>
-        <h3>Loop</h3>
-        <pre><code>for(i, 0, 10, 1) {
-  translate(i, i, 0) {
-    cube(i);
-  }
-}</code></pre>
-        <h3>Comment</h3>
-        <pre><code>// This is Comment
-/*
-This is comment, too!
-*/</code></pre>
       <div class="sign">build by <a href="https://github.com/kntt32/">kntt32</a></div>
     </noscript>
     <div id="root"></div>
@@ -41745,13 +41685,29 @@ var ForSyntax = class {
     this.syntaxes = syntaxes;
   }
   format() {
-    let string = `for(${this.constant}, ${this.start}, ${this.end}, ${this.delta}) {
-`;
-    for (const syntax of this.syntaxes) {
-      string += syntax.syntax.format();
+    let string = `for(${this.constant}, ${this.start}, ${this.end}, ${this.delta})`;
+    if (this.syntaxes.length == 0) {
+      string += ";\n";
+    } else {
+      string += " {\n";
+      for (const syntax of this.syntaxes) {
+        string += "  " + syntax.syntax.format().replaceAll("\n", "\n  ").trimEnd() + "\n";
+      }
+      string += "}\n";
     }
-    string += "}";
     return string;
+  }
+};
+var LinkSyntax = class {
+  offset;
+  url;
+  constructor(offset, url) {
+    this.offset = offset;
+    this.url = url;
+  }
+  format() {
+    return `link "${this.url.href}";
+`;
   }
 };
 var CommentSyntax = class {
@@ -41760,7 +41716,6 @@ var CommentSyntax = class {
     this.msg = msg;
   }
   format() {
-    console.log(this.msg);
     if (this.msg.includes("\n")) {
       return `/*
 ${this.msg}
@@ -41895,6 +41850,11 @@ var Parser = class {
           type: "for",
           syntax: this.parseForSyntax()
         };
+      case "link":
+        return {
+          type: "link",
+          syntax: this.parseLinkSyntax()
+        };
       default:
         return {
           type: "shape",
@@ -41991,6 +41951,12 @@ var Parser = class {
     const delta = params[3];
     return new ForSyntax(offset, constant, start, end, delta, syntaxes);
   }
+  parseLinkSyntax() {
+    const offset = this.offset;
+    const url = new URL(this.parseString());
+    this.parseSymbol(";");
+    return new LinkSyntax(offset, url);
+  }
   parseCommentSyntax() {
     let comment = "";
     if (this.startWithSymbol("/*")) {
@@ -42044,6 +42010,19 @@ var Parser = class {
     } else {
       throw new ParseError(this.offset, `expected symbol "${symbol}"`);
     }
+  }
+  parseString() {
+    let string = "";
+    this.parseSymbol('"');
+    while (this.source.peek() != '"') {
+      const maybeChar = this.source.consume();
+      if (maybeChar == void 0) {
+        throw new ParseError(this.offset, `expected symbol """`);
+      }
+      string += maybeChar;
+    }
+    this.source.consume();
+    return string;
   }
 };
 var ParseError = class {
@@ -42462,6 +42441,7 @@ var ShapeBuilder = class _ShapeBuilder {
   modules;
   parent;
   currentModule;
+  static links = /* @__PURE__ */ new Map();
   constructor(syntaxes, parent = void 0, constants = /* @__PURE__ */ new Map(), currentModule = void 0) {
     this.syntaxes = syntaxes;
     this.constants = constants;
@@ -42515,7 +42495,7 @@ var ShapeBuilder = class _ShapeBuilder {
     }
     this.constants.set(constSyntax.name, value);
   }
-  buildModuleShape(moduleSyntax, params) {
+  async buildModuleShape(moduleSyntax, params) {
     const moduleConstants = /* @__PURE__ */ new Map();
     if (params.length != moduleSyntax.params.length) {
       throw new ParseError(moduleSyntax.offset, `${moduleSyntax.params.length} parameters was expected, found ${params.length}`);
@@ -42523,9 +42503,9 @@ var ShapeBuilder = class _ShapeBuilder {
     for (let i = 0; i < params.length; i++) {
       moduleConstants.set(moduleSyntax.params[i], params[i]);
     }
-    return this.inherit(moduleSyntax.syntaxes, moduleConstants, moduleSyntax.name).build();
+    return await this.inherit(moduleSyntax.syntaxes, moduleConstants, moduleSyntax.name).build();
   }
-  buildShape(shapeSyntax) {
+  async buildShape(shapeSyntax) {
     const name = shapeSyntax.name;
     const params = shapeSyntax.params.map((value) => {
       const num = this.getValue(value);
@@ -42534,7 +42514,7 @@ var ShapeBuilder = class _ShapeBuilder {
       }
       return num;
     });
-    const shapes = this.inherit(shapeSyntax.syntaxes).build();
+    const shapes = await this.inherit(shapeSyntax.syntaxes).build();
     if (Shape.supportedNames.includes(name)) {
       return [
         new Shape(shapeSyntax.offset, name, params, shapes)
@@ -42547,10 +42527,10 @@ var ShapeBuilder = class _ShapeBuilder {
       if (moduleSyntax == "recursion") {
         throw new ParseError(shapeSyntax.offset, `module "${name} has infinite size`);
       }
-      return this.buildModuleShape(moduleSyntax, params);
+      return await this.buildModuleShape(moduleSyntax, params);
     }
   }
-  buildFor(forSyntax) {
+  async buildFor(forSyntax) {
     const shapes = [];
     const constants = new Map(this.constants);
     const start = this.getValue(forSyntax.start);
@@ -42569,22 +42549,52 @@ var ShapeBuilder = class _ShapeBuilder {
       for (let i = start; i < end; i += delta) {
         constants.set(forSyntax.constant, i);
         const builder = this.inherit(forSyntax.syntaxes, constants);
-        shapes.push(...builder.build());
+        shapes.push(...await builder.build());
       }
     } else if (delta < 0) {
       for (let i = start; end < i; i += delta) {
         constants.set(forSyntax.constant, i);
         const builder = this.inherit(forSyntax.syntaxes, constants);
-        shapes.push(...builder.build());
+        shapes.push(...await builder.build());
       }
     }
     return shapes;
   }
-  assemble() {
-    const shapes = this.build();
+  async buildLink(syntax) {
+    if (!_ShapeBuilder.links.has(syntax.url.href)) {
+      let response;
+      try {
+        response = await fetch(syntax.url);
+      } catch {
+        throw new ParseError(syntax.offset, "network error");
+      }
+      const text = await response.text();
+      const source = new Source(syntax.url.href, text);
+      const parser = new Parser(source);
+      const builder = this.inherit(parser.parse());
+      builder.build();
+      _ShapeBuilder.links.set(syntax.url.href, {
+        modules: builder.modules,
+        constants: builder.constants
+      });
+    }
+    for (const [url, { modules, constants }] of _ShapeBuilder.links.entries()) {
+      for (const [name, value] of constants.entries()) {
+        this.constants.set(name, value);
+      }
+      for (const [name, module] of modules.entries()) {
+        if (this.modules.has(name)) {
+          throw new ParseError(syntax.offset, `duplicating module "${name}"`);
+        }
+        this.modules.set(name, module);
+      }
+    }
+  }
+  async assemble() {
+    const shapes = await this.build();
     return new Shape(Offset.root(), "assemble", [], shapes);
   }
-  build() {
+  async build() {
     this.modules = this.enumerateModules();
     const shapes = [];
     for (const syntax of this.syntaxes) {
@@ -42595,10 +42605,13 @@ var ShapeBuilder = class _ShapeBuilder {
           this.buildConst(syntax.syntax);
           break;
         case "shape":
-          shapes.push(...this.buildShape(syntax.syntax));
+          shapes.push(...await this.buildShape(syntax.syntax));
           break;
         case "for":
-          shapes.push(...this.buildFor(syntax.syntax));
+          shapes.push(...await this.buildFor(syntax.syntax));
+          break;
+        case "link":
+          await this.buildLink(syntax.syntax);
           break;
       }
     }
@@ -69566,8 +69579,8 @@ var App = class _App {
       this.format();
     };
     const downloadButton = unwrap(document.getElementById("downloadButton"));
-    downloadButton.onclick = () => {
-      const stl = this.run();
+    downloadButton.onclick = async () => {
+      const stl = await this.run();
       if (stl != void 0) {
         _App.downloadFile("main.stl", "application/stl", stl);
       }
@@ -69708,6 +69721,11 @@ translate(20, 0, 0) {
     cube(i);
   }
 }</code></pre>
+            <h3>Link</h3>
+              <pre><code>link "https://raw.githubusercontent.com/kntt32/as-cad-parts/refs/heads/main/src/gear.acd";
+extrude(5) {
+  gear(10, 0.314, 3.14, -0.2);
+}</code></pre>
             <h3>Comment</h3>
               <pre><code>// This is Comment
 /*
@@ -69739,13 +69757,13 @@ This is comment, too!
       }
     }
   }
-  run() {
+  async run() {
     const text = this.editor.getValue();
     try {
       const source = new Source("main.acd", text);
       const parser = new Parser(source);
       const shapeBuilder = new ShapeBuilder(parser.parse());
-      const shape = shapeBuilder.assemble();
+      const shape = await shapeBuilder.assemble();
       const stl = shape.toStl();
       _App.closeError();
       this.renderPreview(stl);
